@@ -13,6 +13,9 @@ PLEASE REMEMBER TO CHANGE THE '..main' WITH AN ACTUAL TAG in GITHUB LINK.
 ## jax 0.2.23 (Unreleased)
 * [GitHub
   commits](https://github.com/google/jax/compare/jax-v0.2.22...main).
+* Breaking changes
+  * Moved `jax.experimental.stax` to `jax.example_libraries.stax`
+  * Moved `jax.experimental.optimizers` to `jax.example_libraries.optimizers`
 
 * New features:
   * `jax.random.choice` and `jax.random.permutation` now support
