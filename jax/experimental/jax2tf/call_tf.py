@@ -237,7 +237,7 @@ def _call_tf_abstract_eval(*_,
 call_tf_p.def_abstract_eval(_call_tf_abstract_eval)
 
 
-def _call_tf_translation_rule(builder: xla.XlaBuilder, *args_op,
+def _call_tf_translation_rule(ctx, avals_in, avals_out, *args_op,
                               function_flat_tf,
                               args_flat_sig_tf,
                               **_):
@@ -245,7 +245,7 @@ def _call_tf_translation_rule(builder: xla.XlaBuilder, *args_op,
   code_gen, _ = _code_generator_and_avals(function_flat_tf, args_flat_sig_tf,  # type: ignore
                                           code_gen_optional=False)
   assert code_gen is not None
-  return code_gen(builder, args_op)
+  return code_gen(ctx.builder, args_op)
 
 
 @functools.lru_cache(maxsize=128)
@@ -384,8 +384,9 @@ def _code_generator_and_avals(
 
   result_avals = tuple(map(canonical_res_aval, result_shapes))  # type: ignore
 
-  def code_gen(builder: xla.XlaBuilder, args_op: Sequence[xla.XlaOp]) -> xla.XlaOp:
-    captured_ops = [xops.ConstantLiteral(builder, np.asarray(inp))
+  def code_gen(builder: xla.XlaBuilder, args_op: Sequence[xla.XlaOp]
+              ) -> Sequence[xla.XlaOp]:
+    captured_ops = [xops.Constant(builder, np.asarray(inp))
                     for inp in captured_inputs]
 
     res_tf = xops.Call(builder, xla_comp, args_op + tuple(captured_ops))  # type: ignore
@@ -396,18 +397,17 @@ def _code_generator_and_avals(
       if res_aval.dtype != res_shape.numpy_dtype():
         res_op = xops.ConvertElementType(
             res_op,
-            new_element_type=xla_client.dtype_to_etype(res_aval.dtype))
+            new_element_type=xla.dtype_to_primitive_type(res_aval.dtype))
       return res_op
 
-    results = [
+    return [
         post_process_result(i, res_aval, res_shape)
         for i, (res_aval, res_shape) in enumerate(zip(result_avals,
                                                       result_shapes))]
-    return xops.Tuple(builder, results)
 
   return code_gen, result_avals
 
-xla.translations[call_tf_p] = _call_tf_translation_rule
+xla.register_translation(call_tf_p, _call_tf_translation_rule)
 
 TfVal = jax2tf_internal.TfVal
 def _jax2tf_call_tf(*args: TfVal,

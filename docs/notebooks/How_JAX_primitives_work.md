@@ -356,7 +356,7 @@ for most of them. However, XLA includes a `CustomCall` operation that can be use
 
 from jax._src.lib import xla_client
 @trace("multiply_add_xla_translation")
-def multiply_add_xla_translation(c, xc, yc, zc):
+def multiply_add_xla_translation(ctx, avals_in, avals_out, xc, yc, zc):
   """The compilation to XLA of the primitive.
 
   Given an XlaBuilder and XlaOps for each argument, return the XlaOp for the
@@ -369,7 +369,7 @@ def multiply_add_xla_translation(c, xc, yc, zc):
 # Now we register the XLA compilation rule with JAX
 # TODO: for GPU? and TPU?
 from jax.interpreters import xla
-xla.backend_specific_translations['cpu'][multiply_add_p] = multiply_add_xla_translation
+xla.register_translation(multiply_add_p, multiply_add_xla_translation, platform='cpu')
 ```
 
 +++ {"id": "K98LX-VaJkFu"}
