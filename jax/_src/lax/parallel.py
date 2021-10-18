@@ -1071,7 +1071,7 @@ def _all_gather_translation_rule(
                        replica_groups=xc.make_replica_groups(replica_groups))]
   else:
     lowering = xla.lower_fun(_all_gather_via_psum, multiple_results=False,
-                             new_style=True)
+                             parallel=True, new_style=True)
     return lowering(
         ctx, avals_in, avals_out, x, all_gather_dimension=all_gather_dimension,
         axis_name=axis_name, axis_index_groups=axis_index_groups,
@@ -1325,7 +1325,8 @@ def _build_axis_index_lowering(c, axis_name, axis_env):
                                 dtype=np.uint32))
   mod = xb.constant(c, np.array(axis_env.sizes[axis_pos], dtype=np.uint32))
   unsigned_index = xops.Rem(xops.Div(xops.ReplicaId(c), div), mod)
-  return xops.ConvertElementType(unsigned_index, xb.dtype_to_etype(np.int32))
+  return xops.ConvertElementType(
+      unsigned_index, xla.dtype_to_primitive_type(np.dtype(np.int32)))
 
 def _axis_index_translation_rule(ctx, avals_in, avals_out, *, axis_name):
   return [_build_axis_index_lowering(ctx.builder, axis_name, ctx.axis_env)]

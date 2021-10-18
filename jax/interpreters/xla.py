@@ -14,6 +14,7 @@
 
 
 from collections import defaultdict, deque
+import collections.abc
 import dataclasses
 import functools
 from functools import partial, partialmethod
@@ -126,6 +127,34 @@ def make_op_metadata(primitive: core.Primitive,
         source_line=frame.line_num if frame else None)
 
 ### handlers
+
+_dtype_to_primitive_type: Dict[np.dtype, xc.PrimitiveType] = {
+  np.dtype('bool'): xc.PrimitiveType.PRED,
+  np.dtype('int8'): xc.PrimitiveType.S8,
+  np.dtype('int16'): xc.PrimitiveType.S16,
+  np.dtype('int32'): xc.PrimitiveType.S32,
+  np.dtype('int64'): xc.PrimitiveType.S64,
+  np.dtype('uint8'): xc.PrimitiveType.U8,
+  np.dtype('uint16'): xc.PrimitiveType.U16,
+  np.dtype('uint32'): xc.PrimitiveType.U32,
+  np.dtype('uint64'): xc.PrimitiveType.U64,
+  np.dtype(dtypes.bfloat16): xc.PrimitiveType.BF16,
+  np.dtype('float16'): xc.PrimitiveType.F16,
+  np.dtype('float32'): xc.PrimitiveType.F32,
+  np.dtype('float64'): xc.PrimitiveType.F64,
+  np.dtype('complex64'): xc.PrimitiveType.C64,
+  np.dtype('complex128'): xc.PrimitiveType.C128,
+}
+
+def dtype_to_primitive_type(dtype: np.dtype) -> xc.PrimitiveType:
+  """Converts a NumPy dtype into an XLA PrimitiveType."""
+  # Many things (e.g., strings, scalar types) can be compared with NumPy dtypes,
+  # but may not hash correctly. Make sure we have a true np.dtype.
+  assert isinstance(dtype, np.dtype), type(dtype)
+  try:
+    return _dtype_to_primitive_type[dtype]
+  except KeyError as err:
+    raise TypeError(f"No XLA lowering for NumPy dtype: {dtype}") from err
 
 xb.register_constant_handler(core.Unit, lambda c, *_: _make_unit_constant(c))
 
@@ -442,7 +471,8 @@ def jaxpr_subcomp(ctx: TranslationContext, jaxpr: core.Jaxpr,
       ans = rule(ctx, map(aval, eqn.invars), map(aval, eqn.outvars),
                  *in_nodes, **eqn.params)
 
-    assert all(isinstance(x, xe.XlaOp) for x in ans), ans
+    assert isinstance(ans, collections.abc.Sequence), (ans, eqn)
+    assert all(isinstance(x, xe.XlaOp) for x in ans), (ans, eqn)
     map(ctx.builder.get_shape, ans)  # force xla to do shape error checking
     ctx.builder.clear_op_metadata()
     _partitionmap(write, eqn.outvars, ans)
@@ -1178,7 +1208,12 @@ def lower_fun(fun: Callable, *, multiple_results: bool, parallel: bool = False,
       wrapped_fun = lu.wrap_init(fun, params)
       if not multiple_results:
         wrapped_fun = _tuple_output(wrapped_fun)
-      jaxpr, _, consts = pe.trace_to_jaxpr_dynamic(wrapped_fun, avals_in)
+      if parallel:
+        axis_env = ctx.axis_env
+      else:
+        axis_env = AxisEnv(1, (), ())
+      with core.extend_axis_env_nd(zip(axis_env.names, axis_env.sizes)):
+        jaxpr, _, consts = pe.trace_to_jaxpr_dynamic(wrapped_fun, avals_in)
       return jaxpr_subcomp(ctx, jaxpr, _xla_consts(ctx.builder, consts),
                            *xla_args)
     return f_new
